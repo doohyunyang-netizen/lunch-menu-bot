@@ -11,15 +11,12 @@ from PIL import Image
 import io
 from datetime import date
 
-# ── 환경변수에서 키 읽기 (GitHub Secret에 저장된 값) ──────────────────
 GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
 TEAMS_WEBHOOK_URL = os.environ["TEAMS_WEBHOOK_URL"]
 KAKAO_URL         = "https://pf.kakao.com/_yxgQDb/posts"
-# ──────────────────────────────────────────────────────────────────────
 
 
 def capture_page_image(url: str) -> bytes:
-    """카카오 채널 페이지를 열어 스크린샷을 찍는다"""
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
@@ -30,7 +27,6 @@ def capture_page_image(url: str) -> bytes:
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-
     driver = webdriver.Chrome(options=opts)
     try:
         driver.get(url)
@@ -68,55 +64,49 @@ def capture_page_image(url: str) -> bytes:
 
         print("특정 이미지를 찾지 못해 전체 스크린샷을 사용합니다.")
         return png
-
     finally:
         driver.quit()
 
 
 def extract_menu(image_bytes: bytes) -> str:
-    """Gemini API에 이미지를 보내 메뉴를 텍스트로 추출한다 (완전 무료)"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     )
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "inline_data": {
-                            "mime_type": "image/png",
-                            "data": b64,
-                        }
-                    },
-                    {
-                        "text": (
-                            "이 이미지는 오늘의 구내식당 메뉴판입니다. "
-                            "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
-                            "형식:\n"
-                            "• [코너 또는 구분]: 메뉴1, 메뉴2, ...\n\n"
-                            "메뉴 정보가 전혀 보이지 않으면 "
-                            "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
-                        )
-                    },
-                ]
-            }
-        ]
+        "contents": [{
+            "parts": [
+                {"inline_data": {"mime_type": "image/png", "data": b64}},
+                {"text": (
+                    "이 이미지는 오늘의 구내식당 메뉴판입니다. "
+                    "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
+                    "형식:\n"
+                    "• [코너 또는 구분]: 메뉴1, 메뉴2, ...\n\n"
+                    "메뉴 정보가 전혀 보이지 않으면 "
+                    "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
+                )}
+            ]
+        }]
     }
 
-    res = requests.post(url, json=payload, timeout=30)
-    res.raise_for_status()
-    data = res.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    for attempt in range(5):
+        res = requests.post(url, json=payload, timeout=30)
+        if res.status_code == 429:
+            wait = 30 * (attempt + 1)
+            print(f"   429 한도 초과, {wait}초 후 재시도... ({attempt+1}/5)")
+            time.sleep(wait)
+            continue
+        res.raise_for_status()
+        data = res.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    raise Exception("Gemini API 429 오류: 5회 재시도 후에도 실패했습니다.")
 
 
 def send_to_teams(webhook_url: str, menu_text: str):
-    """Teams Incoming Webhook으로 메시지를 전송한다"""
     today = date.today().strftime("%Y년 %m월 %d일")
     body  = menu_text.replace("\n", "<br>")
-
     payload = {
         "@type": "MessageCard",
         "@context": "http://schema.org/extensions",
@@ -125,7 +115,6 @@ def send_to_teams(webhook_url: str, menu_text: str):
         "title": f"🍽️ {today} 점심 메뉴",
         "text": body,
     }
-
     res = requests.post(webhook_url, json=payload, timeout=15)
     res.raise_for_status()
     print("Teams 전송 완료!")
