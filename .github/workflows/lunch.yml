@@ -1,0 +1,31 @@
+name: 점심 메뉴 알림
+
+on:
+  schedule:
+    - cron: '0 1 * * 1-5'  # 한국시간 오전 10시 (UTC+9이므로 UTC 01:00), 평일만
+  workflow_dispatch:         # 수동으로도 실행 가능 (테스트용)
+
+jobs:
+  send-menu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Chrome 설치
+        uses: browser-actions/setup-chrome@latest
+
+      - name: 패키지 설치
+        run: pip install selenium requests pillow
+
+      - name: 메뉴 봇 실행
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: python menu_bot.py
