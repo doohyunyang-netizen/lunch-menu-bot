@@ -34,67 +34,47 @@ def get_menu_image() -> bytes:
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
-
-        # 스크롤 내리며 게시글 로딩 유도
         for _ in range(10):
             driver.execute_script("window.scrollBy(0, 300);")
             time.sleep(0.5)
         time.sleep(3)
 
-        # 방법 1: img 태그
-        img_url = None
-        imgs = driver.find_elements(By.TAG_NAME, "img")
-        for img in imgs:
-            src = img.get_attribute("src") or ""
-            w = img.size.get("width", 0)
-            h = img.size.get("height", 0)
-            print(f"   [img] {w}x{h} {src[:80]}")
-            if w > 200 and h > 200:
-                img_url = src
-                break
+        # 페이지 소스에서 kakaocdn img_xl URL만 추출
+        source = driver.page_source
+        urls = re.findall(
+            r'https://k\.kakaocdn\.net/dn/[^"\']+/img_xl\.jpg',
+            source
+        )
+        # 중복 제거
+        urls = list(dict.fromkeys(urls))
+        print(f"   img_xl URL {len(urls)}개 발견:")
+        for i, u in enumerate(urls):
+            print(f"   [{i}] {u}")
 
-        # 방법 2: 페이지 소스에서 kakaocdn 이미지 URL 직접 추출
-        if not img_url:
-            source = driver.page_source
-            urls = re.findall(r'https://[^"\']+kakaocdn[^"\']+\.(?:jpg|jpeg|png)', source)
-            print(f"   [소스] kakaocdn URL {len(urls)}개 발견")
-            for u in urls:
-                print(f"   [소스] {u[:100]}")
-            # 가장 큰 이미지일 가능성 높은 img_xl 우선
-            for u in urls:
-                if "img_xl" in u or "img_l" in u:
-                    img_url = u
-                    break
-            if not img_url and urls:
-                img_url = urls[0]
-
-        # 방법 3: background-image 스타일에서 추출
-        if not img_url:
-            elements = driver.find_elements(By.XPATH, "//*[@style]")
-            for el in elements:
-                style = el.get_attribute("style") or ""
-                if "kakaocdn" in style:
-                    match = re.search(r'url\(["\']?(https?://[^"\')\s]+)["\']?\)', style)
-                    if match:
-                        img_url = match.group(1)
-                        print(f"   [bg] {img_url[:100]}")
-                        break
-
-        if img_url:
-            print(f"   최종 선택 URL: {img_url[:100]}")
+        if not urls:
+            print("   URL을 못 찾아 전체 스크린샷 사용")
+            img_bytes = driver.get_screenshot_as_png()
+        else:
+            # 첫 번째 = 가장 최신 게시글
+            img_url = urls[0]
+            print(f"   선택: {img_url}")
             res = requests.get(img_url, timeout=15)
             res.raise_for_status()
             img_bytes = res.content
-        else:
-            print("   이미지 URL을 찾지 못해 전체 스크린샷 사용")
-            img_bytes = driver.get_screenshot_as_png()
 
         # 압축
         img_obj = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         img_obj.thumbnail((1200, 1200))
         buf = io.BytesIO()
         img_obj.save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
+        compressed = buf.getvalue()
+
+        # 파일로 저장 (Actions artifact로 확인 가능)
+        with open("menu_image.jpg", "wb") as f:
+            f.write(compressed)
+        print("   menu_image.jpg 저장 완료 (Actions artifact에서 확인 가능)")
+
+        return compressed
 
     finally:
         driver.quit()
