@@ -16,7 +16,8 @@ TEAMS_WEBHOOK_URL = os.environ["TEAMS_WEBHOOK_URL"]
 KAKAO_URL         = "https://pf.kakao.com/_yxgQDb/posts"
 
 
-def capture_page_image(url: str) -> bytes:
+def get_menu_image() -> bytes:
+    """카카오 채널 최신 게시글 이미지 URL을 찾아 다운로드한다"""
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
@@ -29,63 +30,65 @@ def capture_page_image(url: str) -> bytes:
     )
     driver = webdriver.Chrome(options=opts)
     try:
-        driver.get(url)
+        driver.get(KAKAO_URL)
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.TAG_NAME, "img"))
         )
-        time.sleep(4)
 
-        # ── 디버그: 페이지 제목과 URL 출력 ──
-        print(f"   [디버그] 페이지 제목: {driver.title}")
-        print(f"   [디버그] 현재 URL: {driver.current_url}")
+        # 스크롤을 내려 게시글 이미지 로딩
+        for _ in range(8):
+            driver.execute_script("window.scrollBy(0, 300);")
+            time.sleep(0.8)
+        time.sleep(2)
 
-        # ── 디버그: 전체 스크린샷을 파일로 저장 ──
-        driver.save_screenshot("debug_screenshot.png")
-        print("   [디버그] debug_screenshot.png 저장 완료")
-
-        # ── 디버그: 발견된 img 태그 목록 출력 ──
+        # 모든 img src 출력 (디버그)
         imgs = driver.find_elements(By.TAG_NAME, "img")
-        print(f"   [디버그] img 태그 총 {len(imgs)}개 발견")
-        for i, img in enumerate(imgs[:10]):
+        print(f"   [디버그] img 총 {len(imgs)}개")
+        for i, img in enumerate(imgs):
             src = img.get_attribute("src") or ""
             w = img.size.get("width", 0)
             h = img.size.get("height", 0)
-            print(f"   [디버그] img[{i}] {w}x{h} | {src[:80]}")
+            print(f"   [디버그] [{i}] {w}x{h} {src[:100]}")
 
-        target = None
+        # kakaocdn 이미지 중 가장 큰 것 선택
+        best_url = None
+        max_area = 0
         for img in imgs:
             src = img.get_attribute("src") or ""
-            if "kakaocdn" in src or "kakao.co.kr" in src:
-                w = img.size.get("width", 0)
-                h = img.size.get("height", 0)
-                if w > 100 and h > 100:
-                    target = img
-                    break
+            if "kakaocdn" not in src and "kakao.co.kr" not in src:
+                continue
+            w = img.size.get("width", 0)
+            h = img.size.get("height", 0)
+            if w * h > max_area and w > 100 and h > 100:
+                max_area = w * h
+                best_url = src
 
-        png = driver.get_screenshot_as_png()
+        if best_url:
+            print(f"   [디버그] 선택된 이미지 URL: {best_url[:100]}")
+            # 이미지 직접 다운로드
+            res = requests.get(best_url, timeout=15)
+            res.raise_for_status()
+            img_bytes = res.content
+        else:
+            # 못 찾으면 전체 스크린샷
+            print("   게시글 이미지를 못 찾아 전체 스크린샷 사용")
+            img_bytes = driver.get_screenshot_as_png()
 
-        if target:
-            loc  = target.location
-            size = target.size
-            print(f"   [디버그] 타겟 이미지 위치: {loc}, 크기: {size}")
-            img_obj = Image.open(io.BytesIO(png))
-            left   = int(loc["x"])
-            top    = int(loc["y"])
-            right  = int(loc["x"] + size["width"])
-            bottom = int(loc["y"] + size["height"])
-            if right > left and bottom > top:
-                cropped = img_obj.crop((left, top, right, bottom))
-                buf = io.BytesIO()
-                cropped.save(buf, format="PNG")
-                return buf.getvalue()
+        # 이미지 압축 (Gemini 업로드 크기 제한 대응)
+        img_obj = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        img_obj.thumbnail((1200, 1200))  # 최대 1200px로 축소
+        buf = io.BytesIO()
+        img_obj.save(buf, format="JPEG", quality=85)
+        compressed = buf.getvalue()
+        print(f"   이미지 크기: {len(img_bytes):,} → {len(compressed):,} bytes")
+        return compressed
 
-        print("   특정 이미지를 찾지 못해 전체 스크린샷을 사용합니다.")
-        return png
     finally:
         driver.quit()
 
 
 def extract_menu(image_bytes: bytes) -> str:
+    """Gemini API로 메뉴 텍스트 추출"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -94,7 +97,7 @@ def extract_menu(image_bytes: bytes) -> str:
     payload = {
         "contents": [{
             "parts": [
-                {"inline_data": {"mime_type": "image/png", "data": b64}},
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
                 {"text": (
                     "이 이미지는 오늘의 구내식당 메뉴판입니다. "
                     "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
@@ -106,22 +109,15 @@ def extract_menu(image_bytes: bytes) -> str:
             ]
         }]
     }
-
-    for attempt in range(5):
-        res = requests.post(url, json=payload, timeout=30)
-        if res.status_code == 429:
-            wait = 30 * (attempt + 1)
-            print(f"   429 한도 초과, {wait}초 후 재시도... ({attempt+1}/5)")
-            time.sleep(wait)
-            continue
-        res.raise_for_status()
-        data = res.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-    raise Exception("Gemini API 429 오류: 5회 재시도 후에도 실패했습니다.")
+    res = requests.post(url, json=payload, timeout=30)
+    print(f"   [디버그] Gemini 응답코드: {res.status_code}")
+    if res.status_code != 200:
+        print(f"   [디버그] Gemini 응답내용: {res.text[:300]}")
+    res.raise_for_status()
+    return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def send_to_teams(webhook_url: str, menu_text: str):
+def send_to_teams(menu_text: str):
     today = date.today().strftime("%Y년 %m월 %d일")
     body  = menu_text.replace("\n", "<br>")
     payload = {
@@ -132,22 +128,22 @@ def send_to_teams(webhook_url: str, menu_text: str):
         "title": f"🍽️ {today} 점심 메뉴",
         "text": body,
     }
-    res = requests.post(webhook_url, json=payload, timeout=15)
+    res = requests.post(TEAMS_WEBHOOK_URL, json=payload, timeout=15)
     res.raise_for_status()
     print("Teams 전송 완료!")
 
 
 def main():
-    print("1) 카카오 채널 페이지 열어 이미지 캡처 중...")
-    img = capture_page_image(KAKAO_URL)
-    print(f"   캡처 완료 ({len(img):,} bytes)")
+    print("1) 카카오 채널 이미지 가져오는 중...")
+    img = get_menu_image()
+    print(f"   완료 ({len(img):,} bytes)")
 
     print("2) Gemini로 메뉴 분석 중...")
     menu = extract_menu(img)
     print("   추출된 메뉴:\n", menu)
 
     print("3) Teams로 전송 중...")
-    send_to_teams(TEAMS_WEBHOOK_URL, menu)
+    send_to_teams(menu)
     print("완료!")
 
 
