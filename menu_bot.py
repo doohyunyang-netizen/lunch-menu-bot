@@ -35,7 +35,23 @@ def capture_page_image(url: str) -> bytes:
         )
         time.sleep(4)
 
+        # ── 디버그: 페이지 제목과 URL 출력 ──
+        print(f"   [디버그] 페이지 제목: {driver.title}")
+        print(f"   [디버그] 현재 URL: {driver.current_url}")
+
+        # ── 디버그: 전체 스크린샷을 파일로 저장 ──
+        driver.save_screenshot("debug_screenshot.png")
+        print("   [디버그] debug_screenshot.png 저장 완료")
+
+        # ── 디버그: 발견된 img 태그 목록 출력 ──
         imgs = driver.find_elements(By.TAG_NAME, "img")
+        print(f"   [디버그] img 태그 총 {len(imgs)}개 발견")
+        for i, img in enumerate(imgs[:10]):
+            src = img.get_attribute("src") or ""
+            w = img.size.get("width", 0)
+            h = img.size.get("height", 0)
+            print(f"   [디버그] img[{i}] {w}x{h} | {src[:80]}")
+
         target = None
         for img in imgs:
             src = img.get_attribute("src") or ""
@@ -51,6 +67,7 @@ def capture_page_image(url: str) -> bytes:
         if target:
             loc  = target.location
             size = target.size
+            print(f"   [디버그] 타겟 이미지 위치: {loc}, 크기: {size}")
             img_obj = Image.open(io.BytesIO(png))
             left   = int(loc["x"])
             top    = int(loc["y"])
@@ -62,7 +79,7 @@ def capture_page_image(url: str) -> bytes:
                 cropped.save(buf, format="PNG")
                 return buf.getvalue()
 
-        print("특정 이미지를 찾지 못해 전체 스크린샷을 사용합니다.")
+        print("   특정 이미지를 찾지 못해 전체 스크린샷을 사용합니다.")
         return png
     finally:
         driver.quit()
