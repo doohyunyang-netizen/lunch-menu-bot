@@ -2,8 +2,8 @@ name: 점심 메뉴 알림
 
 on:
   schedule:
-    - cron: '0 1 * * 1-5'  # 한국시간 오전 10시 (UTC+9이므로 UTC 01:00), 평일만
-  workflow_dispatch:         # 수동으로도 실행 가능 (테스트용)
+    - cron: '0 1 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   send-menu:
@@ -26,6 +26,13 @@ jobs:
 
       - name: 메뉴 봇 실행
         env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: python menu_bot.py
+
+      - name: 캡처 이미지 저장 (디버그용)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-image
+          path: menu_image.jpg
