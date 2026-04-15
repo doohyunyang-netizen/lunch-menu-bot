@@ -1,4 +1,39 @@
-env:
+name: 점심 메뉴 알림
+
+on:
+  schedule:
+    - cron: '0 1 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  send-menu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Chrome 설치
+        uses: browser-actions/setup-chrome@latest
+
+      - name: 패키지 설치
+        run: pip install selenium requests pillow
+
+      - name: 메뉴 봇 실행
+        env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python menu_bot.py
+
+      - name: 캡처 이미지 저장 (디버그용)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-image
+          path: menu_image.jpg
