@@ -85,7 +85,7 @@ def extract_menu(image_bytes: bytes) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "google/gemini-2.0-flash-exp:free",
+        "model": "google/gemini-2.5-pro-exp-03-25:free",
         "messages": [{
             "role": "user",
             "content": [
