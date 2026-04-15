@@ -85,7 +85,7 @@ def extract_menu(image_bytes: bytes) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
+        "model": "openrouter/auto",
         "messages": [{
             "role": "user",
             "content": [
