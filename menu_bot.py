@@ -85,7 +85,7 @@ def extract_menu(image_bytes: bytes) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "google/gemini-2.5-pro-exp-03-25:free",
+        "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
         "messages": [{
             "role": "user",
             "content": [
