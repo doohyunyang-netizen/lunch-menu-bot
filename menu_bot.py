@@ -14,7 +14,6 @@ from datetime import date
 
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 TEAMS_WEBHOOK_URL  = os.environ["TEAMS_WEBHOOK_URL"]
-SLACK_WEBHOOK_URL  = os.environ["SLACK_WEBHOOK_URL"]
 KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
 
 
@@ -134,15 +133,6 @@ def send_to_teams(menu_text: str):
     print("Teams 전송 완료!")
 
 
-def send_to_slack(menu_text: str):
-    today = date.today().strftime("%Y년 %m월 %d일")
-    payload = {
-        "text": f"🍽️ *{today} 점심 메뉴*\n{menu_text}"
-    }
-    res = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=15)
-    res.raise_for_status()
-    print("Slack 전송 완료!")
-
 
 def main():
     print("1) 오늘 게시글 이미지 가져오는 중...")
@@ -160,9 +150,6 @@ def main():
 
     print("3) Teams로 전송 중...")
     send_to_teams(menu)
-
-    print("4) Slack으로 전송 중...")
-    send_to_slack(menu)
     print("완료!")
 
 
