@@ -85,7 +85,7 @@ def extract_menu(image_bytes: bytes) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "openrouter/auto",
+        "model": "openrouter/auto:free",
         "messages": [{
             "role": "user",
             "content": [
