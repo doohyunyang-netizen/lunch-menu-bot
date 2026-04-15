@@ -12,15 +12,15 @@ from PIL import Image
 import io
 from datetime import date
 
-GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
-TEAMS_WEBHOOK_URL = os.environ["TEAMS_WEBHOOK_URL"]
-KAKAO_URL         = "https://pf.kakao.com/_yxgQDb/posts"
+OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
+TEAMS_WEBHOOK_URL  = os.environ["TEAMS_WEBHOOK_URL"]
+SLACK_WEBHOOK_URL  = os.environ["SLACK_WEBHOOK_URL"]
+KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
 
 
 def get_today_image() -> bytes | None:
     """오늘 날짜 게시글 이미지만 가져온다"""
     today = date.today()
-    # 카카오 채널 날짜 형식: 26/4/9 (연도 뒤 2자리/월/일)
     today_pattern = f"{str(today.year)[2:]}/{today.month}/{today.day}"
     print(f"   오늘 날짜 패턴: {today_pattern}")
 
@@ -45,31 +45,27 @@ def get_today_image() -> bytes | None:
             time.sleep(0.5)
         time.sleep(3)
 
-        # 오늘 날짜 게시글이 있는지 확인
         body_text = driver.find_element(By.TAG_NAME, "body").text
         if today_pattern not in body_text:
             print(f"   오늘({today_pattern}) 게시글이 아직 없어요.")
             return None
         print(f"   오늘 게시글 확인!")
 
-        # 페이지 소스에서 img_xl URL 순서대로 추출
         source = driver.page_source
         urls = list(dict.fromkeys(
             re.findall(r'https://k\.kakaocdn\.net/dn/[^"\']+/img_xl\.jpg', source)
         ))
-        print(f"   img_xl URL {len(urls)}개 발견, 첫 번째 = 오늘 게시글")
+        print(f"   img_xl URL {len(urls)}개 발견")
 
         if not urls:
             print("   이미지 URL을 찾지 못했어요.")
             return None
 
-        # 첫 번째 URL = 가장 최신 게시글 = 오늘 게시글
         img_url = urls[0]
         print(f"   선택: {img_url}")
         res = requests.get(img_url, timeout=15)
         res.raise_for_status()
 
-        # 압축
         img_obj = Image.open(io.BytesIO(res.content)).convert("RGB")
         img_obj.thumbnail((1200, 1200))
         buf = io.BytesIO()
@@ -81,33 +77,46 @@ def get_today_image() -> bytes | None:
 
 
 def extract_menu(image_bytes: bytes) -> str:
-    """Gemini API로 이미지에서 메뉴 텍스트 추출"""
+    """OpenRouter API로 이미지에서 메뉴 텍스트 추출"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-                {"text": (
-                    "이 이미지는 오늘의 구내식당 메뉴판입니다. "
-                    "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
-                    "형식:\n"
-                    "• [구분]: 메뉴1, 메뉴2, ...\n\n"
-                    "메뉴 정보가 전혀 보이지 않으면 "
-                    "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
-                )}
-            ]
-        }]
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
     }
-    res = requests.post(url, json=payload, timeout=30)
-    print(f"   Gemini 응답코드: {res.status_code}")
+    payload = {
+        "model": "google/gemini-2.0-flash-exp:free",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "이 이미지는 오늘의 구내식당 메뉴판입니다. "
+                        "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
+                        "형식:\n"
+                        "• [구분]: 메뉴1, 메뉴2, ...\n\n"
+                        "메뉴 정보가 전혀 보이지 않으면 "
+                        "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
+                    )
+                },
+            ],
+        }],
+    }
+
+    res = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers, json=payload, timeout=30
+    )
+    print(f"   OpenRouter 응답코드: {res.status_code}")
     if res.status_code != 200:
-        print(f"   Gemini 오류: {res.text[:300]}")
+        print(f"   OpenRouter 오류: {res.text[:300]}")
     res.raise_for_status()
-    return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return res.json()["choices"][0]["message"]["content"].strip()
 
 
 def send_to_teams(menu_text: str):
@@ -125,6 +134,16 @@ def send_to_teams(menu_text: str):
     print("Teams 전송 완료!")
 
 
+def send_to_slack(menu_text: str):
+    today = date.today().strftime("%Y년 %m월 %d일")
+    payload = {
+        "text": f"🍽️ *{today} 점심 메뉴*\n{menu_text}"
+    }
+    res = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=15)
+    res.raise_for_status()
+    print("Slack 전송 완료!")
+
+
 def main():
     print("1) 오늘 게시글 이미지 가져오는 중...")
     img = get_today_image()
@@ -135,12 +154,15 @@ def main():
 
     print(f"   완료 ({len(img):,} bytes)")
 
-    print("2) Gemini로 메뉴 분석 중...")
+    print("2) OpenRouter로 메뉴 분석 중...")
     menu = extract_menu(img)
     print("   추출된 메뉴:\n", menu)
 
     print("3) Teams로 전송 중...")
     send_to_teams(menu)
+
+    print("4) Slack으로 전송 중...")
+    send_to_slack(menu)
     print("완료!")
 
 
