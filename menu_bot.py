@@ -12,10 +12,9 @@ from PIL import Image
 import io
 from datetime import date
 
-OPENROUTER_API_KEY    = os.environ["OPENROUTER_API_KEY"]
-TEAMS_WEBHOOK_URL     = os.environ["TEAMS_WEBHOOK_URL"]
-TEAMS_CHAT_WEBHOOK_URL = os.environ["TEAMS_CHAT_WEBHOOK_URL"]
-KAKAO_URL             = "https://pf.kakao.com/_yxgQDb/posts"
+OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
+TEAMS_WEBHOOK_URL  = os.environ["TEAMS_WEBHOOK_URL"]
+KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
 
 
 def get_today_image() -> bytes | None:
@@ -134,17 +133,6 @@ def send_to_teams(menu_text: str):
     print("Teams 채널 전송 완료!")
 
 
-def send_to_teams_chat(menu_text: str):
-    today = date.today().strftime("%Y년 %m월 %d일")
-    payload = {
-        "title": f"🍽️ {today} 점심 메뉴",
-        "text": menu_text,
-    }
-    res = requests.post(TEAMS_CHAT_WEBHOOK_URL, json=payload, timeout=15)
-    res.raise_for_status()
-    print("Teams 채팅방 전송 완료!")
-
-
 
 def main():
     print("1) 오늘 게시글 이미지 가져오는 중...")
@@ -162,9 +150,6 @@ def main():
 
     print("3) Teams 채널로 전송 중...")
     send_to_teams(menu)
-
-    print("4) Teams 채팅방으로 전송 중...")
-    send_to_teams_chat(menu)
     print("완료!")
 
 
