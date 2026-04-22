@@ -84,7 +84,7 @@ def extract_menu(image_bytes: bytes) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "openrouter/free",
+        "model": "google/gemma-4-27b-it:free",
         "messages": [{
             "role": "user",
             "content": [
