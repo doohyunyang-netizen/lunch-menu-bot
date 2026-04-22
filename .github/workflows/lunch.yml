@@ -2,7 +2,7 @@ name: 점심 메뉴 알림
 
 on:
   schedule:
-    - cron: '0 1 * * 1-5'
+    - cron: '0 0 * * 1-5'  # 한국시간 오전 9시 (UTC 00:00), 평일만
   workflow_dispatch:
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          TEAMS_CHAT_WEBHOOK_URL: ${{ secrets.TEAMS_CHAT_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python menu_bot.py
 
       - name: 캡처 이미지 저장 (디버그용)
