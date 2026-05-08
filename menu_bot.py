@@ -16,9 +16,15 @@ OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 TEAMS_WEBHOOK_URL  = os.environ["TEAMS_WEBHOOK_URL"]
 KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
 
+MODELS = [
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-3-12b-it:free",
+    "google/gemma-3-4b-it:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+]
+
 
 def get_today_image() -> bytes | None:
-    """오늘 날짜 게시글 이미지만 가져온다"""
     today = date.today()
     today_pattern = f"{str(today.year)[2:]}/{today.month}/{today.day}"
     print(f"   오늘 날짜 패턴: {today_pattern}")
@@ -48,7 +54,7 @@ def get_today_image() -> bytes | None:
         if today_pattern not in body_text:
             print(f"   오늘({today_pattern}) 게시글이 아직 없어요.")
             return None
-        print(f"   오늘 게시글 확인!")
+        print("   오늘 게시글 확인!")
 
         source = driver.page_source
         urls = list(dict.fromkeys(
@@ -76,46 +82,50 @@ def get_today_image() -> bytes | None:
 
 
 def extract_menu(image_bytes: bytes) -> str:
-    """OpenRouter API로 이미지에서 메뉴 텍스트 추출"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": "google/gemma-3-27b-it:free",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        "이 이미지는 오늘의 구내식당 메뉴판입니다. "
-                        "이미지에 보이는 메뉴를 아래 형식으로 요약해 주세요.\n\n"
-                        "형식:\n"
-                        "• [구분]: 메뉴1, 메뉴2, ...\n\n"
-                        "메뉴 정보가 전혀 보이지 않으면 "
-                        "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
-                    )
-                },
-            ],
-        }],
-    }
-
-    res = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers=headers, json=payload, timeout=30
+    text_prompt = (
+        "이 이미지는 오늘의 구내식당 메뉴판입니다. "
+        "이미지에 보이는 메뉴를 아래 형식으로 보기 좋게 정리해 주세요.\n\n"
+        "형식 예시:\n"
+        "🍜 국/찌개: 감자탕\n"
+        "🍗 메인: 순살닭다리살양념볶음, 통살후르츠탕수육\n"
+        "🥘 사이드: 해물부추전, 미니찐빵찜\n"
+        "🥗 샐러드: 양배추샐러드\n"
+        "🥒 김치/반찬: 수제깍두기, 콩나물무침, 배추김치\n"
+        "🍰 후식: 필라델피아크림치즈, 누텔라쵸코, 제철과일\n"
+        "☕ 음료: 매실차, 보리차, 믹스커피\n\n"
+        "이미지에 없는 항목은 생략하고, "
+        "각 줄 앞에 어울리는 이모지를 붙여 주세요. "
+        "메뉴 정보가 전혀 보이지 않으면 "
+        "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
     )
-    print(f"   OpenRouter 응답코드: {res.status_code}")
-    if res.status_code != 200:
-        print(f"   OpenRouter 오류: {res.text[:300]}")
-    res.raise_for_status()
-    return res.json()["choices"][0]["message"]["content"].strip()
+
+    for model in MODELS:
+        print(f"   모델 시도: {model}")
+        payload = {
+            "model": model,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                    {"type": "text", "text": text_prompt},
+                ],
+            }],
+        }
+        res = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, json=payload, timeout=30
+        )
+        print(f"   응답코드: {res.status_code}")
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"].strip()
+        print(f"   실패: {res.text[:150]}")
+
+    raise Exception("모든 모델 시도 실패")
 
 
 def send_to_teams(menu_text: str):
@@ -131,7 +141,6 @@ def send_to_teams(menu_text: str):
     res = requests.post(TEAMS_WEBHOOK_URL, json=payload, timeout=15)
     res.raise_for_status()
     print("Teams 채널 전송 완료!")
-
 
 
 def main():
