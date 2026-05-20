@@ -12,16 +12,9 @@ from PIL import Image
 import io
 from datetime import date
 
-OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
-TEAMS_WEBHOOK_URL  = os.environ["TEAMS_WEBHOOK_URL"]
-KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
-
-MODELS = [
-    "google/gemma-4-26b-a4b-it:free",
-    "google/lyria-3-pro-preview",
-    "google/lyria-3-clip-preview",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-]
+GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
+TEAMS_WEBHOOK_URL = os.environ["TEAMS_WEBHOOK_URL"]
+KAKAO_URL         = "https://pf.kakao.com/_yxgQDb/posts"
 
 
 def get_today_image() -> bytes | None:
@@ -82,11 +75,9 @@ def get_today_image() -> bytes | None:
 
 
 def extract_menu(image_bytes: bytes) -> str:
+    """Gemini API로 이미지에서 메뉴 추출 (모델 순차 시도)"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
+
     text_prompt = (
         "이 이미지는 오늘의 구내식당 메뉴판입니다. "
         "이미지에 보이는 메뉴를 아래 형식으로 보기 좋게 정리해 주세요.\n\n"
@@ -104,28 +95,36 @@ def extract_menu(image_bytes: bytes) -> str:
         "'메뉴 이미지를 확인할 수 없습니다.'라고만 답해 주세요."
     )
 
+    # 한도 초과시 자동으로 다음 모델로
+    MODELS = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite",
+    ]
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+                {"text": text_prompt}
+            ]
+        }]
+    }
+
     for model in MODELS:
         print(f"   모델 시도: {model}")
-        payload = {
-            "model": model,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                    {"type": "text", "text": text_prompt},
-                ],
-            }],
-        }
-        res = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers, json=payload, timeout=30
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={GEMINI_API_KEY}"
         )
+        res = requests.post(url, json=payload, timeout=30)
         print(f"   응답코드: {res.status_code}")
         if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"].strip()
-        print(f"   실패: {res.text[:150]}")
+            return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        print(f"   실패: {res.text[:200]}")
 
-    raise Exception("모든 모델 시도 실패")
+    raise Exception("모든 Gemini 모델 시도 실패")
 
 
 def send_to_teams(menu_text: str):
@@ -153,7 +152,7 @@ def main():
 
     print(f"   완료 ({len(img):,} bytes)")
 
-    print("2) OpenRouter로 메뉴 분석 중...")
+    print("2) Gemini로 메뉴 분석 중...")
     menu = extract_menu(img)
     print("   추출된 메뉴:\n", menu)
 
