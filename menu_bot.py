@@ -18,9 +18,9 @@ KAKAO_URL          = "https://pf.kakao.com/_yxgQDb/posts"
 
 MODELS = [
     "google/gemma-4-26b-a4b-it:free",
-    "google/gemma-3-12b-it:free",
-    "google/gemma-3-4b-it:free",
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "google/lyria-3-pro-preview",
+    "google/lyria-3-clip-preview",
+    "nvidia/nemotron-3-super-120b-a12b:free",
 ]
 
 
