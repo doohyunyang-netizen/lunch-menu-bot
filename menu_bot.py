@@ -23,6 +23,23 @@ def get_today_image() -> bytes | None:
     today_pattern = f"{str(today.year)[2:]}/{today.month}/{today.day}"
     print(f"   오늘 날짜 패턴: {today_pattern}")
 
+    # 최대 3번까지 재시도
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            print(f"   시도 {attempt}/3")
+            return _fetch_image(today_pattern)
+        except Exception as e:
+            last_error = e
+            print(f"   실패: {e}")
+            if attempt < 3:
+                print(f"   10초 후 재시도...")
+                time.sleep(10)
+
+    raise last_error
+
+
+def _fetch_image(today_pattern: str) -> bytes | None:
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
@@ -34,6 +51,7 @@ def get_today_image() -> bytes | None:
         "Chrome/120.0.0.0 Safari/537.36"
     )
     driver = webdriver.Chrome(options=opts)
+    driver.set_page_load_timeout(60)  # 페이지 로드 타임아웃 60초로 연장
     try:
         driver.get(KAKAO_URL)
         WebDriverWait(driver, 20).until(
