@@ -13,7 +13,6 @@ import io
 from datetime import date
 
 GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
-TEAMS_WEBHOOK_URL = os.environ["TEAMS_WEBHOOK_URL"]
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 KAKAO_URL         = "https://pf.kakao.com/_yxgQDb/posts"
 
@@ -146,21 +145,6 @@ def extract_menu(image_bytes: bytes) -> str:
     raise Exception("모든 Gemini 모델 시도 실패")
 
 
-def send_to_teams(menu_text: str):
-    today = date.today().strftime("%Y년 %m월 %d일")
-    payload = {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "summary": f"{today} 점심 메뉴",
-        "themeColor": "2BAE66",
-        "title": f"🍽️ {today} 점심 메뉴",
-        "text": menu_text.replace("\n", "<br>"),
-    }
-    res = requests.post(TEAMS_WEBHOOK_URL, json=payload, timeout=15)
-    res.raise_for_status()
-    print("Teams 채널 전송 완료!")
-
-
 def send_to_slack(menu_text: str):
     today = date.today().strftime("%Y년 %m월 %d일")
     payload = {
@@ -185,10 +169,7 @@ def main():
     menu = extract_menu(img)
     print("   추출된 메뉴:\n", menu)
 
-    print("3) Teams 채널로 전송 중...")
-    send_to_teams(menu)
-
-    print("4) Slack으로 전송 중...")
+    print("3) Slack으로 전송 중...")
     send_to_slack(menu)
     print("완료!")
 
